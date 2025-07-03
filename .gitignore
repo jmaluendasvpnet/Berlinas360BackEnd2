@@ -1,0 +1,22 @@
+/docs
+# /myapp/AdminDBUtilsConn.py
+# /mysite/settings.py
+/.idea
+/db.sqlite3
+/venv/
+/__pycache__/
+/*.pyc
+
+
+*.log
+*.pot
+*.pyc
+__pycache__/
+*.sqlite3
+*.swp
+*.swo
+*.DS_Store
+
+best_model_intenciones_bert.pth
+/media
+/trainings
