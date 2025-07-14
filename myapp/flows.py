@@ -39,7 +39,7 @@ class RegistrarSiniestroFlowComponent:
     def handle(self, user_text):
         step = self.session.current_step
         parsed = parse_user_data(user_text)
-        response = ""
+        response = {}
         user_text_lower = user_text.lower().strip()
 
         if step == "START":
@@ -49,28 +49,30 @@ class RegistrarSiniestroFlowComponent:
                 self.session.metadata["placa"] = placa
                 self.session.metadata["documento"] = documento
                 self.session.current_step = "CONFIRMAR_DATOS"
-                response = f"Detecté que tu placa es {placa} y tu documento es {documento}. ¿Son correctos estos datos? (Responde 'Sí' o 'No')"
+                response["text"] = f"Detecté que tu placa es {placa} y tu documento es {documento}. ¿Son correctos estos datos?"
+                response["buttons"] = ["Sí", "No"]
             else:
                 self.session.current_step = "ASK_PLACA"
-                response = "Por favor ingresa la placa del vehículo."
+                response["text"] = "Por favor ingresa la placa del vehículo."
             self.session.save()
         elif step == "ASK_PLACA":
             placa_in = normalize_plate(user_text)
             if 6 <= len(placa_in) <= 7:
                 self.session.metadata["placa"] = placa_in
                 self.session.current_step = "ASK_DOCUMENTO"
-                response = f"Placa {placa_in} recibida. Ahora ingresa tu número de documento."
+                response["text"] = f"Placa {placa_in} recibida. Ahora ingresa tu número de documento."
             else:
-                response = "No pude leer la placa. Ingresa la placa del vehículo (Ej: ABC123)."
+                response["text"] = "No pude leer la placa. Ingresa la placa del vehículo (Ej: ABC123)."
             self.session.save()
         elif step == "ASK_DOCUMENTO":
             doc_in = re.sub(r'[^0-9]', '', user_text)
             if 6 <= len(doc_in) <= 10:
                 self.session.metadata["documento"] = doc_in
                 self.session.current_step = "CONFIRMAR_DATOS"
-                response = f"Detecté placa {self.session.metadata['placa']} y doc {doc_in}. ¿Son correctos? (Sí/No)"
+                response["text"] = f"Detecté placa {self.session.metadata['placa']} y doc {doc_in}. ¿Son correctos?"
+                response["buttons"] = ["Sí", "No"]
             else:
-                response = "No pude leer el documento. Indica solo números, ej: 12345678."
+                response["text"] = "No pude leer el documento. Indica solo números, ej: 12345678."
             self.session.save()
         elif step == "CONFIRMAR_DATOS":
             if user_response_says_yes(user_text):
@@ -82,37 +84,40 @@ class RegistrarSiniestroFlowComponent:
                     vehiculo = Vehiculos.objects.get(placa=self.session.metadata["placa"])
                     notify_propietario(vehiculo, siniestro.id)
                     self.session.current_step = "ASK_DESCRIPCION"
-                    response = "Por favor, proporciona la descripción del siniestro. Puedes escribir 'omitir' para dejarla en blanco."
+                    response["text"] = "Por favor, proporciona la descripción del siniestro."
+                    response["buttons"] = ["Omitir"]
                 else:
                     if not placa_valid:
                         self.session.current_step = "FIX_PLACA"
-                        response = "La placa no es válida. Ingresa la placa del vehículo."
+                        response["text"] = "La placa no es válida. Ingresa la placa del vehículo."
                     elif not doc_valid:
                         self.session.current_step = "FIX_DOCUMENTO"
-                        response = "El documento no es válido. Ingresa tu número de documento correcto."
+                        response["text"] = "El documento no es válido. Ingresa tu número de documento correcto."
             elif user_response_says_no(user_text):
                 self.session.current_step = "FIX_DOCUMENTO"
-                response = "Ok, ingresa tu número de documento correcto."
+                response["text"] = "Ok, ingresa tu número de documento correcto."
             else:
-                response = "No comprendí tu respuesta. ¿Son correctos estos datos? Responde 'Sí' o 'No'."
+                response["text"] = "No comprendí tu respuesta. ¿Son correctos estos datos?"
+                response["buttons"] = ["Sí", "No"]
             self.session.save()
         elif step == "FIX_DOCUMENTO":
             doc_fix = re.sub(r'[^0-9]', '', user_text)
             if self.check_documento_valid(doc_fix):
                 self.session.metadata["documento"] = doc_fix
                 self.session.current_step = "FIX_PLACA"
-                response = f"Documento {doc_fix} válido. Ahora ingresa la placa del vehículo."
+                response["text"] = f"Documento {doc_fix} válido. Ahora ingresa la placa del vehículo."
             else:
-                response = "Ese documento no existe en nuestros registros. Intenta con otro."
+                response["text"] = "Ese documento no existe en nuestros registros. Intenta con otro."
             self.session.save()
         elif step == "FIX_PLACA":
             placa_fix = normalize_plate(user_text)
             if self.check_placa_valid(placa_fix):
                 self.session.metadata["placa"] = placa_fix
                 self.session.current_step = "CONFIRMAR_DATOS"
-                response = f"Ahora detecté placa {placa_fix} y documento {self.session.metadata['documento']}. ¿Son correctos? (Sí/No)"
+                response["text"] = f"Ahora detecté placa {placa_fix} y documento {self.session.metadata['documento']}. ¿Son correctos?"
+                response["buttons"] = ["Sí", "No"]
             else:
-                response = "No encontré esa placa en la base de datos. Intenta otra."
+                response["text"] = "No encontré esa placa en la base de datos. Intenta otra."
             self.session.save()
         elif step == "ASK_DESCRIPCION":
             if user_text_lower != "omitir":
@@ -123,7 +128,8 @@ class RegistrarSiniestroFlowComponent:
                 Siniestro.objects.filter(id=self.session.metadata["siniestro_id"]).update(descripcion="")
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_UBICACION"
-            response = "Descripción recibida. Por favor, comparte la ubicación del siniestro (ej: 4.12345,-72.12345). Puedes escribir 'omitir' para dejarla en blanco."
+            response["text"] = "Descripción recibida. Por favor, comparte la ubicación del siniestro (ej: 4.12345,-72.12345)."
+            response["buttons"] = ["Omitir"]
             self.session.save()
         elif step == "ASK_UBICACION":
             if user_text_lower != "omitir" and "," in user_text:
@@ -141,7 +147,8 @@ class RegistrarSiniestroFlowComponent:
                 self.session.metadata["ubicacion"] = ""
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_CONCILIACION"
-            response = "Ubicación recibida. ¿Hay acuerdo con el tercero para conciliación? Responde 'Sí' o 'No'. Si intervino un conciliador externo, escribe 'Conciliador'."
+            response["text"] = "Ubicación recibida. ¿Hay acuerdo con el tercero para conciliación?"
+            response["buttons"] = ["Sí", "No", "Conciliador"]
             self.session.save()
         elif step == "ASK_CONCILIACION":
             if user_response_says_yes(user_text_lower):
@@ -150,21 +157,23 @@ class RegistrarSiniestroFlowComponent:
                 )
                 broadcast_siniestro_update(self.session.metadata["siniestro_id"])
                 self.session.current_step = "ASK_TERCERO_NOMBRE"
-                response = "Por favor, ingresa el nombre completo del tercero (Conductor 2). Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Por favor, ingresa el nombre completo del tercero (Conductor 2)."
+                response["buttons"] = ["Omitir"]
             elif user_response_says_no(user_text_lower):
                 ActaConciliacion.objects.update_or_create(
                     siniestro_id=self.session.metadata["siniestro_id"], defaults={"conciliacion_lograda": False}
                 )
                 broadcast_siniestro_update(self.session.metadata["siniestro_id"])
-                # Reset current_tercero_id to ensure a new Tercero object is created for the first non-conciliacion third party
                 self.session.metadata["current_tercero_id"] = None
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_NOMBRE"
-                response = "Entendido. No hay conciliación. Ingresa el nombre completo del conductor del otro vehículo. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Entendido. No hay conciliación. Ingresa el nombre completo del conductor del otro vehículo."
+                response["buttons"] = ["Omitir"]
             elif "conciliador" in user_text_lower:
                 self.session.current_step = "ASK_CONCILIADOR_FOTO"
-                response = "Por favor, sube el archivo o imagen del acuerdo realizado por el conciliador."
+                response["text"] = "Por favor, sube el archivo o imagen del acuerdo realizado por el conciliador."
             else:
-                response = "No comprendí tu respuesta. Responde 'Sí', 'No' o 'Conciliador'."
+                response["text"] = "No comprendí tu respuesta."
+                response["buttons"] = ["Sí", "No", "Conciliador"]
             self.session.save()
         elif step == "ASK_CONCILIADOR_FOTO":
             pending = self.session.metadata.get("pending_media", [])
@@ -179,20 +188,20 @@ class RegistrarSiniestroFlowComponent:
                 self.session.current_step = "DONE"
                 if self.session.closed_at is None:
                     self.session.closed_at = timezone.now()
-                response = "La conciliación por conciliador se ha registrado exitosamente. Proceso finalizado."
+                response["text"] = "La conciliación por conciliador se ha registrado exitosamente. Proceso finalizado.\nTienes una hora para subir evidencias."
             else:
-                response = "No se recibió el archivo. Sube la imagen o archivo del acuerdo."
+                response["text"] = "No se recibió el archivo. Sube la imagen o archivo del acuerdo."
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_NOMBRE":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.nombre_completo = user_text.strip()
-                tercero.save(update_fields=["nombre_completo"])
             else:
                 tercero.nombre_completo = ""
-                tercero.save(update_fields=["nombre_completo"])
+            tercero.save(update_fields=["nombre_completo"])
             self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_CEDULA"
-            response = "Ingresa el número de cédula del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa el número de cédula del conductor."
+            response["buttons"] = ["Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_CEDULA":
@@ -200,52 +209,53 @@ class RegistrarSiniestroFlowComponent:
             ced = re.sub(r'[^0-9]', '', user_text)
             if user_text_lower != "omitir" and 6 <= len(ced) <= 10:
                 tercero.cedula = ced
-                tercero.save(update_fields=["cedula"])
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_TELEFONO"
-                response = "Ingresa el teléfono del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Ingresa el teléfono del conductor."
+                response["buttons"] = ["Omitir"]
             elif user_text_lower == "omitir":
                 tercero.cedula = ""
-                tercero.save(update_fields=["cedula"])
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_TELEFONO"
-                response = "Ingresa el teléfono del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Ingresa el teléfono del conductor."
+                response["buttons"] = ["Omitir"]
             else:
-                response = "Cédula inválida. Ingresa una cédula correcta o 'omitir'."
+                response["text"] = "Cédula inválida. Ingresa una cédula correcta o 'omitir'."
+            tercero.save(update_fields=["cedula"])
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_TELEFONO":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.telefono = user_text.strip()
-                tercero.save(update_fields=["telefono"])
             else:
                 tercero.telefono = ""
-                tercero.save(update_fields=["telefono"])
+            tercero.save(update_fields=["telefono"])
             self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_DIRECCION"
-            response = "Ingresa la dirección del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa la dirección del conductor."
+            response["buttons"] = ["Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_DIRECCION":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.direccion = user_text.strip()
-                tercero.save(update_fields=["direccion"])
             else:
                 tercero.direccion = ""
-                tercero.save(update_fields=["direccion"])
+            tercero.save(update_fields=["direccion"])
             self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_EMAIL"
-            response = "Ingresa el email del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa el email del conductor."
+            response["buttons"] = ["Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_EMAIL":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.email = user_text.strip()
-                tercero.save(update_fields=["email"])
             else:
                 tercero.email = ""
-                tercero.save(update_fields=["email"])
+            tercero.save(update_fields=["email"])
             self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_LICENCIA"
-            response = "Envía una foto de la licencia de conducción del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Envía una foto de la licencia de conducción del conductor."
+            response["buttons"] = ["Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_LICENCIA":
@@ -255,7 +265,6 @@ class RegistrarSiniestroFlowComponent:
                 media = pending.pop(0)
                 path = media["url"]
                 tercero.licencia_conduccion = path
-                tercero.save(update_fields=["licencia_conduccion"])
                 SiniestroMedia.objects.create(
                     siniestro_id=self.session.metadata["siniestro_id"],
                     file_url=path,
@@ -264,14 +273,17 @@ class RegistrarSiniestroFlowComponent:
                 )
                 self.session.metadata["pending_media"] = pending
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_LICENCIA_TRANSITO"
-                response = "Licencia de conducción recibida. Envía ahora una foto de la licencia de tránsito. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Licencia de conducción recibida. Envía ahora una foto de la licencia de tránsito."
+                response["buttons"] = ["Omitir"]
             elif user_text_lower == "omitir":
                 tercero.licencia_conduccion = ""
-                tercero.save(update_fields=["licencia_conduccion"])
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_LICENCIA_TRANSITO"
-                response = "Licencia de conducción omitida. Envía ahora una foto de la licencia de tránsito. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Licencia de conducción omitida. Envía ahora una foto de la licencia de tránsito."
+                response["buttons"] = ["Omitir"]
             else:
-                response = "No se recibió la imagen. Envía una foto de la licencia de conducción o 'omitir'."
+                response["text"] = "No se recibió la imagen. Envía una foto de la licencia de conducción."
+                response["buttons"] = ["Omitir"]
+            tercero.save(update_fields=["licencia_conduccion"])
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_LICENCIA_TRANSITO":
@@ -281,7 +293,6 @@ class RegistrarSiniestroFlowComponent:
                 media = pending.pop(0)
                 path = media["url"]
                 tercero.licencia_transito = path
-                tercero.save(update_fields=["licencia_transito"])
                 SiniestroMedia.objects.create(
                     siniestro_id=self.session.metadata["siniestro_id"],
                     file_url=path,
@@ -290,14 +301,17 @@ class RegistrarSiniestroFlowComponent:
                 )
                 self.session.metadata["pending_media"] = pending
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_AUDIO"
-                response = "Licencia de tránsito recibida. Envía ahora un audio con la versión del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Licencia de tránsito recibida. Envía ahora un audio con la versión del conductor."
+                response["buttons"] = ["Omitir"]
             elif user_text_lower == "omitir":
                 tercero.licencia_transito = ""
-                tercero.save(update_fields=["licencia_transito"])
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_AUDIO"
-                response = "Licencia de tránsito omitida. Envía ahora un audio con la versión del conductor. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Licencia de tránsito omitida. Envía ahora un audio con la versión del conductor."
+                response["buttons"] = ["Omitir"]
             else:
-                response = "No se recibió la imagen. Envía una foto de la licencia de tránsito o 'omitir'."
+                response["text"] = "No se recibió la imagen. Envía una foto de la licencia de tránsito."
+                response["buttons"] = ["Omitir"]
+            tercero.save(update_fields=["licencia_transito"])
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_AUDIO":
@@ -307,7 +321,6 @@ class RegistrarSiniestroFlowComponent:
                 media = pending.pop(0)
                 path = media["url"]
                 tercero.audio_version = path
-                tercero.save(update_fields=["audio_version"])
                 SiniestroMedia.objects.create(
                     siniestro_id=self.session.metadata["siniestro_id"],
                     file_url=path,
@@ -316,14 +329,17 @@ class RegistrarSiniestroFlowComponent:
                 )
                 self.session.metadata["pending_media"] = pending
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_FOTO_SEGURO"
-                response = "Audio recibido. Envía ahora una foto del seguro del vehículo. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Audio recibido. Envía ahora una foto del seguro del vehículo."
+                response["buttons"] = ["Omitir"]
             elif user_text_lower == "omitir":
                 tercero.audio_version = ""
-                tercero.save(update_fields=["audio_version"])
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_FOTO_SEGURO"
-                response = "Audio omitido. Envía ahora una foto del seguro del vehículo. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Audio omitido. Envía ahora una foto del seguro del vehículo."
+                response["buttons"] = ["Omitir"]
             else:
-                response = "No se recibió el audio. Envía el audio con la versión del conductor o 'omitir'."
+                response["text"] = "No se recibió el audio. Envía el audio con la versión del conductor."
+                response["buttons"] = ["Omitir"]
+            tercero.save(update_fields=["audio_version"])
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_CONDUCTOR_FOTO_SEGURO":
@@ -333,7 +349,6 @@ class RegistrarSiniestroFlowComponent:
                 media = pending.pop(0)
                 path = media["url"]
                 tercero.fotos_seguro = path
-                tercero.save(update_fields=["fotos_seguro"])
                 SiniestroMedia.objects.create(
                     siniestro_id=self.session.metadata["siniestro_id"],
                     file_url=path,
@@ -342,14 +357,17 @@ class RegistrarSiniestroFlowComponent:
                 )
                 self.session.metadata["pending_media"] = pending
                 self.session.current_step = "NO_CONCILIACION_IS_CONDUCTOR_SAME_AS_PROPIETARIO"
-                response = "Foto del seguro recibida. ¿El conductor es el mismo propietario del vehículo? (Responde 'Sí', 'No' o 'omitir')."
+                response["text"] = "Foto del seguro recibida. ¿El conductor es el mismo propietario del vehículo?"
+                response["buttons"] = ["Sí", "No", "Omitir"]
             elif user_text_lower == "omitir":
                 tercero.fotos_seguro = ""
-                tercero.save(update_fields=["fotos_seguro"])
                 self.session.current_step = "NO_CONCILIACION_IS_CONDUCTOR_SAME_AS_PROPIETARIO"
-                response = "Foto del seguro omitida. ¿El conductor es el mismo propietario del vehículo? (Responde 'Sí', 'No' o 'omitir')."
+                response["text"] = "Foto del seguro omitida. ¿El conductor es el mismo propietario del vehículo?"
+                response["buttons"] = ["Sí", "No", "Omitir"]
             else:
-                response = "No se recibió la imagen. Envía una foto del seguro o 'omitir'."
+                response["text"] = "No se recibió la imagen. Envía una foto del seguro."
+                response["buttons"] = ["Omitir"]
+            tercero.save(update_fields=["fotos_seguro"])
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_IS_CONDUCTOR_SAME_AS_PROPIETARIO":
@@ -360,181 +378,169 @@ class RegistrarSiniestroFlowComponent:
                 tercero.correo_propietario = tercero.email
                 tercero.save()
                 self.session.current_step = "ASK_ANOTHER_TERCERO"
-                response = "¿Hay otro tercero involucrado en el siniestro? (Sí/No)"
+                response["text"] = "¿Hay otro tercero involucrado en el siniestro?"
+                response["buttons"] = ["Sí", "No"]
             elif user_response_says_no(user_text):
                 self.session.current_step = "NO_CONCILIACION_ASK_PROPIETARIO_NOMBRE"
-                response = "Ingresa el nombre completo del propietario. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Ingresa el nombre completo del propietario."
+                response["buttons"] = ["Omitir"]
             elif user_text_lower == "omitir":
                 self.session.current_step = "ASK_ANOTHER_TERCERO"
-                response = "¿Hay otro tercero involucrado en el siniestro? (Sí/No)"
+                response["text"] = "¿Hay otro tercero involucrado en el siniestro?"
+                response["buttons"] = ["Sí", "No"]
             else:
-                response = "No comprendí tu respuesta. ¿El conductor es el propietario? (Sí/No/omitir)"
+                response["text"] = "No comprendí tu respuesta. ¿El conductor es el propietario?"
+                response["buttons"] = ["Sí", "No", "Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_PROPIETARIO_NOMBRE":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.propietario = user_text.strip()
-                tercero.save(update_fields=["propietario"])
             else:
                 tercero.propietario = ""
-                tercero.save(update_fields=["propietario"])
+            tercero.save(update_fields=["propietario"])
             self.session.current_step = "NO_CONCILIACION_ASK_PROPIETARIO_CEDULA"
-            response = "Ingresa el número de cédula del propietario. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa el número de cédula del propietario."
+            response["buttons"] = ["Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
-        elif step == "NO_CONCILIACION_ASK_PROPIETARIO_CEDULA":
+        elif step == "NO_CONCILIacion_ASK_PROPIETARIO_CEDULA":
             tercero = self.get_no_conciliacion_tercero()
             ced = re.sub(r'[^0-9]', '', user_text)
             if user_text_lower != "omitir" and 6 <= len(ced) <= 10:
                 tercero.cedula_propietario = ced
-                tercero.save(update_fields=["cedula_propietario"])
                 self.session.current_step = "NO_CONCILIACION_ASK_PROPIETARIO_DIRECCION"
-                response = "Cédula del propietario recibida. Ingresa la dirección del propietario. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Cédula del propietario recibida. Ingresa la dirección del propietario."
+                response["buttons"] = ["Omitir"]
             elif user_text_lower == "omitir":
                 tercero.cedula_propietario = ""
-                tercero.save(update_fields=["cedula_propietario"])
                 self.session.current_step = "NO_CONCILIACION_ASK_PROPIETARIO_DIRECCION"
-                response = "Cédula del propietario omitida. Ingresa la dirección del propietario. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Cédula del propietario omitida. Ingresa la dirección del propietario."
+                response["buttons"] = ["Omitir"]
             else:
-                response = "Cédula inválida. Ingresa una cédula correcta para el propietario o 'omitir'."
+                response["text"] = "Cédula inválida. Ingresa una cédula correcta para el propietario o 'omitir'."
+            tercero.save(update_fields=["cedula_propietario"])
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_PROPIETARIO_DIRECCION":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.direccion_propietario = user_text.strip()
-                tercero.save(update_fields=["direccion_propietario"])
             else:
                 tercero.direccion_propietario = ""
-                tercero.save(update_fields=["direccion_propietario"])
+            tercero.save(update_fields=["direccion_propietario"])
             self.session.current_step = "NO_CONCILIACION_ASK_PROPIETARIO_EMAIL"
-            response = "Ingresa el correo electrónico del propietario. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa el correo electrónico del propietario."
+            response["buttons"] = ["Omitir"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "NO_CONCILIACION_ASK_PROPIETARIO_EMAIL":
             tercero = self.get_no_conciliacion_tercero()
             if user_text_lower != "omitir":
                 tercero.correo_propietario = user_text.strip()
-                tercero.save(update_fields=["correo_propietario"])
             else:
                 tercero.correo_propietario = ""
-                tercero.save(update_fields=["correo_propietario"])
+            tercero.save(update_fields=["correo_propietario"])
             self.session.current_step = "ASK_ANOTHER_TERCERO"
-            response = "¿Hay otro tercero involucrado en el siniestro? (Sí/No)"
+            response["text"] = "¿Hay otro tercero involucrado en el siniestro?"
+            response["buttons"] = ["Sí", "No"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "ASK_ANOTHER_TERCERO":
             if user_response_says_yes(user_text):
-                self.session.metadata["current_tercero_id"] = None  # Reset to create a new Tercero
+                self.session.metadata["current_tercero_id"] = None
                 self.session.current_step = "NO_CONCILIACION_ASK_CONDUCTOR_NOMBRE"
-                response = "Ingresa el nombre completo del siguiente conductor del otro vehículo. Puedes escribir 'omitir' para dejarlo en blanco."
+                response["text"] = "Ingresa el nombre completo del siguiente conductor del otro vehículo."
+                response["buttons"] = ["Omitir"]
             elif user_response_says_no(user_text):
                 self.session.current_step = "DONE"
                 if self.session.closed_at is None:
                     self.session.closed_at = timezone.now()
-                response = "Hemos finalizado el proceso de registro de terceros. ¡Gracias!"
+                response["text"] = "Hemos finalizado el proceso de registro de terceros. ¡Gracias!.\nTienes una hora para subir evidencias."
             else:
-                response = "No comprendí tu respuesta. ¿Hay otro tercero? (Sí/No)"
+                response["text"] = "No comprendí tu respuesta. ¿Hay otro tercero?"
+                response["buttons"] = ["Sí", "No"]
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.save()
         elif step == "ASK_TERCERO_NOMBRE":
+            defaults = {}
             if user_text_lower != "omitir":
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"nombre_completo_conductor2": truncate_if_needed(user_text.strip(), 250)}
-                )
+                defaults["nombre_completo_conductor2"] = truncate_if_needed(user_text.strip(), 250)
             else:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"nombre_completo_conductor2": ""}
-                )
+                defaults["nombre_completo_conductor2"] = ""
+            ActaConciliacion.objects.update_or_create(siniestro_id=self.session.metadata["siniestro_id"], defaults=defaults)
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_TERCERO_CEDULA"
-            response = "Por favor, ingresa la cédula del tercero. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Por favor, ingresa la cédula del tercero."
+            response["buttons"] = ["Omitir"]
             self.session.save()
         elif step == "ASK_TERCERO_CEDULA":
             ced = re.sub(r'[^0-9]', '', user_text)
+            defaults = {}
             if user_text_lower != "omitir" and ced:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"cedula_conductor2": truncate_if_needed(ced, 15)}
-                )
+                defaults["cedula_conductor2"] = truncate_if_needed(ced, 15)
             else:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"cedula_conductor2": ""}
-                )
+                defaults["cedula_conductor2"] = ""
+            ActaConciliacion.objects.update_or_create(siniestro_id=self.session.metadata["siniestro_id"], defaults=defaults)
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_TERCERO_PLACA"
-            response = "Por favor, ingresa la placa del vehículo del tercero. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Por favor, ingresa la placa del vehículo del tercero."
+            response["buttons"] = ["Omitir"]
             self.session.save()
         elif step == "ASK_TERCERO_PLACA":
             placa_t = normalize_plate(user_text)
+            defaults = {}
             if user_text_lower != "omitir" and placa_t:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"placa_conductor2": truncate_if_needed(placa_t, 7)}
-                )
+                defaults["placa_conductor2"] = truncate_if_needed(placa_t, 7)
             else:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"placa_conductor2": ""}
-                )
+                defaults["placa_conductor2"] = ""
+            ActaConciliacion.objects.update_or_create(siniestro_id=self.session.metadata["siniestro_id"], defaults=defaults)
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_TERCERO_TELEFONO"
-            response = "Ingresa el número de teléfono del tercero. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa el número de teléfono del tercero."
+            response["buttons"] = ["Omitir"]
             self.session.save()
         elif step == "ASK_TERCERO_TELEFONO":
+            defaults = {}
             if user_text_lower != "omitir":
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"telefono_conductor2": truncate_if_needed(user_text.strip(), 15)}
-                )
+                defaults["telefono_conductor2"] = truncate_if_needed(user_text.strip(), 15)
             else:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"telefono_conductor2": ""}
-                )
+                defaults["telefono_conductor2"] = ""
+            ActaConciliacion.objects.update_or_create(siniestro_id=self.session.metadata["siniestro_id"], defaults=defaults)
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_TERCERO_EMAIL"
-            response = "Ingresa el email del tercero. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa el email del tercero."
+            response["buttons"] = ["Omitir"]
             self.session.save()
         elif step == "ASK_TERCERO_EMAIL":
+            defaults = {}
             if user_text_lower != "omitir":
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"email_conductor2": truncate_if_needed(user_text.strip(), 50)}
-                )
+                defaults["email_conductor2"] = truncate_if_needed(user_text.strip(), 50)
             else:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"email_conductor2": ""}
-                )
+                defaults["email_conductor2"] = ""
+            ActaConciliacion.objects.update_or_create(siniestro_id=self.session.metadata["siniestro_id"], defaults=defaults)
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             self.session.current_step = "ASK_CONDUCTOR2_SUMAPAGAR"
-            response = "Ingresa la suma a pagar acordada. Puedes escribir 'omitir' para dejarlo en blanco."
+            response["text"] = "Ingresa la suma a pagar acordada."
+            response["buttons"] = ["Omitir"]
             self.session.save()
         elif step == "ASK_CONDUCTOR2_SUMAPAGAR":
+            defaults = {}
             if user_text_lower != "omitir":
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"suma_a_pagar": truncate_if_needed(user_text.strip(), 15)}
-                )
+                defaults["suma_a_pagar"] = truncate_if_needed(user_text.strip(), 15)
             else:
-                ActaConciliacion.objects.update_or_create(
-                    siniestro_id=self.session.metadata["siniestro_id"],
-                    defaults={"suma_a_pagar": ""}
-                )
+                defaults["suma_a_pagar"] = ""
+            ActaConciliacion.objects.update_or_create(siniestro_id=self.session.metadata["siniestro_id"], defaults=defaults)
             broadcast_siniestro_update(self.session.metadata["siniestro_id"])
             url_firma = f"{settings.FRONTEND_URL}/sinister/conciliacion?placa={self.session.metadata['placa']}&siniestroId={self.session.metadata['siniestro_id']}"
-            response = f"Datos guardados.\nIngresa al siguiente enlace para firmar la conciliación: {url_firma}\nTienes una hora para subir evidencias."
+            response["text"] = f"Datos guardados.\nIngresa al siguiente enlace para firmar la conciliación: {url_firma}\nTienes una hora para subir evidencias."
             self.session.current_step = "DONE"
             if self.session.closed_at is None:
                 self.session.closed_at = timezone.now()
             self.session.save()
         else:
-            response = "Hemos finalizado el proceso. ¡Gracias!"
+            response["text"] = "Hemos finalizado el proceso. ¡Gracias!"
             self.session.current_step = "DONE"
             if self.session.closed_at is None:
                 self.session.closed_at = timezone.now()
@@ -546,14 +552,14 @@ class ConsultarPolizaFlowComponent:
     def __init__(self, session):
         self.session = session
 
-    def handle(self, user_text: str) -> str:
+    def handle(self, user_text: str):
         driver = get_driver_by_phone(self.session.user_phone)
         if not driver or not driver.vehiculo:
             self.session.current_step = "DONE"
             if self.session.closed_at is None:
                 self.session.closed_at = timezone.now()
             self.session.save()
-            return "No se encontró vehículo asociado a tu número de teléfono."
+            return {"text": "No se encontró vehículo asociado a tu número de teléfono."}
 
         vehiculo = driver.vehiculo
         soats = Soat.objects.filter(vehiculo=vehiculo, estado=True).order_by('-id')
@@ -563,18 +569,18 @@ class ConsultarPolizaFlowComponent:
             if self.session.closed_at is None:
                 self.session.closed_at = timezone.now()
             self.session.save()
-            return "No se encontró SOAT ni Revisión Tecnomecánica para tu vehículo."
+            return {"text": "No se encontró SOAT ni Revisión Tecnomecánica para tu vehículo."}
 
-        response = ""
+        response_text = ""
         if soats:
             soat = soats.first()
-            response += (
+            response_text += (
                 f"SOAT: {soat.numero_poliza} - Expedición: {soat.fecha_expedicion.strftime('%Y-%m-%d')} - "
                 f"Vence: {soat.vigencia_hasta.strftime('%Y-%m-%d')}\nDescarga PDF: {soat.soporte}\n\n"
             )
         if revs:
             rev = revs.first()
-            response += (
+            response_text += (
                 f"Tecnomecánica Cert: {rev.no_certificado} - Vence: {rev.fecha_vencimiento.strftime('%Y-%m-%d')}\n"
                 f"Descarga PDF: {rev.soporte}\n"
             )
@@ -583,4 +589,4 @@ class ConsultarPolizaFlowComponent:
         if self.session.closed_at is None:
             self.session.closed_at = timezone.now()
         self.session.save()
-        return response
+        return {"text": response_text.strip()}

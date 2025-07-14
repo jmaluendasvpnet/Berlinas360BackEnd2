@@ -1048,6 +1048,26 @@ class SiniestroProcesoSlr(serializers.ModelSerializer):
             'historial_actuaciones_siniestro'
         ]
 
+class SiniestroMinSlr(serializers.ModelSerializer):
+    entes_atendieron = EnteAtencionSlr(many=True, read_only=True)
+    numero_victimas = serializers.IntegerField(source='numero_victimas_calculado', read_only=True)
+
+    class Meta:
+        model = Siniestro
+        fields = [
+            'id',
+            'descripcion',
+            'tipo_evento',
+            'gravedad',
+            'numero_victimas',
+            'entes_atendieron',
+            'latitud',
+            'longitud',
+            'zona',
+            'fecha_creacion',
+            'ipat',
+            'inmovilizacion',
+        ]
 
 class SiniestrosSlr(serializers.ModelSerializer):
     media = SiniestroMediaSlr(many=True, read_only=True)

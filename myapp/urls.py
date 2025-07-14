@@ -87,7 +87,9 @@ urlpatterns = [
     path('login/', views.LoginView.as_view(), name='Inicio de sesion'),
     path('whatsapp_webhook/', views_whatsapp.whatsapp_webhook, name='webhook_whatsapp'),
 
+
     path('upload-license/', views.UploadLicenseView.as_view(), name='upload-license'),
+    path('upload-licenses-xlsx/', views.BulkUploadDocsAPIView.as_view(), name='upload-licenses-xlsx'),
     path('upload-license2/', view_rf_for.UploadLicenseView.as_view(), name='upload-license'),
 #     path('UploadColombianLicenseView/', views.UploadColombianLicenseView.as_view(), name='upload-license-col'),
 

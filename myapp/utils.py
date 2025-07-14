@@ -1,4 +1,3 @@
-
 from django.core.files.storage import default_storage
 from transformers import BertTokenizer, BertModel
 from django.core.files.base import ContentFile
@@ -81,7 +80,6 @@ except FileNotFoundError:
     print(f"ERROR CRÍTICO: Archivo de modelo BERT no encontrado en {MODEL_PATH}")
 except Exception as e:
     print(f"ERROR CRÍTICO: No se pudo cargar el modelo BERT o el tokenizer: {e}")
-
 
 def check_ffmpeg_installed():
     return True
@@ -277,9 +275,10 @@ def truncate_if_needed(value: str, max_length: int) -> str:
         return value[:max_length]
     return value
 
-def _download_and_store_media_file(media_url: str, content_type: str) -> str:
+def _download_and_store_media_file(media_url: str, content_type: str, source: str) -> str:
     try:
-        response = requests.get(media_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if source == "twilio" else None
+        response = requests.get(media_url, auth=auth)
         response.raise_for_status()
         content = response.content
 
@@ -299,12 +298,13 @@ def _download_and_store_media_file(media_url: str, content_type: str) -> str:
         print(f"Error en _download_and_store_media_file: {e}")
         return None
 
-def transcribe_audio_from_twilio_media_url(media_url: str, content_type: str) -> str:
+def transcribe_audio_from_media_url(media_url: str, content_type: str, source: str) -> str:
     if not WHISPER_MODEL:
-        print("Error en transcribe_audio_from_twilio_media_url: Modelo Whisper no cargado.")
+        print("Error en transcribe_audio_from_media_url: Modelo Whisper no cargado.")
         return ""
     try:
-        response = requests.get(media_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN))
+        auth = (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if source == "twilio" else None
+        response = requests.get(media_url, auth=auth)
         response.raise_for_status()
         audio_data = response.content
         extension = "ogg"
@@ -321,11 +321,7 @@ def transcribe_audio_from_twilio_media_url(media_url: str, content_type: str) ->
         print(f"Excepción en transcribe_audio_from_twilio_media_url: {e}")
         return ""
 
-# utils.py
-
-# utils.py
-
-def attach_incoming_media_and_maybe_transcribe(session: ConversationSession, request_data: dict) -> str:
+def attach_incoming_media_and_maybe_transcribe(session: ConversationSession, request_data: dict, source: str) -> str:
     num_media = int(request_data.get("NumMedia", "0"))
     transcribed_text = ""
     if num_media == 0:
@@ -339,18 +335,14 @@ def attach_incoming_media_and_maybe_transcribe(session: ConversationSession, req
         media_type = request_data.get(f"MediaContentType{i}", "application/octet-stream")
         if not media_url:
             continue
-        # Nuevo manejo: guardamos siempre el archivo, incluso si es audio
-        stored_url = _download_and_store_media_file(media_url, media_type) or media_url
+        stored_url = _download_and_store_media_file(media_url, media_type, source) or media_url
         session.metadata["pending_media"].append({"url": stored_url, "tipo": media_type})
-        # Solo transcribimos si es audio
         if "audio" in media_type:
-            result_text = transcribe_audio_from_twilio_media_url(media_url, media_type)
+            result_text = transcribe_audio_from_media_url(media_url, media_type, source)
             if result_text:
                 transcribed_text = f"{transcribed_text} {result_text}".strip()
     session.save(update_fields=["metadata"])
     return transcribed_text
-
-
 
 def create_tts_audio(text: str, request) -> str:
     try:

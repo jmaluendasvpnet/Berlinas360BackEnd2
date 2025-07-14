@@ -1740,7 +1740,7 @@ from .models import (
 from .serializers import (
     SiniestrosSlr, SiniestroMediaSlr, SiniestroLogSlr,
     EnteAtencionSlr, TerceroSlr, ActaConciliacionSlr, IpatSlr,
-    ColaboradoresSlr, VehiculosSlr, EmpresasSlr,
+    ColaboradoresSlr, VehiculosSlr, EmpresasSlr, SiniestroMinSlr,
     ProcesoDefinicionSlr, EtapaDefinicionSlr, SubEtapaDefinicionSlr, ActuacionDefinicionSlr,
     VictimaSlr, VictimaProcesoSlr, HistorialActuacionSlr, SiniestroHistorialActuacionSlr, SiniestroProcesoSlr
 )    
@@ -2070,6 +2070,16 @@ class SiniestroVS(FilterableViewSet):
             siniestro_proceso_instance.actuacion_definicion_siguiente = None
         siniestro_proceso_instance.save()
 
+    @action(detail=False, methods=['get'], url_path='minimal')
+    def minimal(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = SiniestroMinSlr(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = SiniestroMinSlr(queryset, many=True)
+        return Response(serializer.data)
+    
     @action(detail=True, methods=['post'], url_path='iniciar-proceso-general')
     @transaction.atomic
     def iniciar_proceso_general(self, request, pk=None):
@@ -2393,7 +2403,7 @@ class VictimaVS(FilterableViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
     
-class VictimaProcesoVS(viewsets.ModelViewSet):
+class VictimaProcesoVS(FilterableViewSet):
     queryset = VictimaProceso.objects.all().select_related(
         'victima', 'proceso_definicion_actual',
         'etapa_definicion_actual', 'sub_etapa_definicion_actual',
@@ -2417,7 +2427,6 @@ class VictimaProcesoVS(viewsets.ModelViewSet):
                  return 'completada' 
         
         return latest_log.status_actuacion
-
 
     def _calculate_next_victim_state(self, victima_proceso_instance):
         proceso_def = victima_proceso_instance.proceso_definicion_actual
@@ -2521,7 +2530,6 @@ class VictimaProcesoVS(viewsets.ModelViewSet):
             else:
                  return Response({"error": "La víctima ya tiene un proceso diferente en curso."}, status=status.HTTP_400_BAD_REQUEST)
 
-
         victima_proceso.proceso_definicion_actual = proceso_def
         victima_proceso.etapa_definicion_actual = None
         victima_proceso.sub_etapa_definicion_actual = None
@@ -2568,7 +2576,6 @@ class VictimaProcesoVS(viewsets.ModelViewSet):
                     login_user_instance = request.user
             except Exception:
                 pass
-
 
         historial_instance = serializer.save(
             victima_proceso=victima_proceso,

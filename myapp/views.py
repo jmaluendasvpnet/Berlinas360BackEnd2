@@ -259,9 +259,8 @@ import json
 from openai import OpenAI
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-import os
-
-cliente_openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+settings.API_KEY
+cliente_openai = OpenAI(api_key=settings.API_KEY)
 
 @csrf_exempt
 def analisis_recomendaciones_openai(request):
@@ -2184,3 +2183,94 @@ class UploadView(APIView):
         file_url = os.path.join(settings.MEDIA_URL, 'uploads_eval', filename)
 
         return Response({"url": file_url}, status=status.HTTP_201_CREATED)
+    
+
+
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+import pandas as pd
+import uuid
+from django.core.files.storage import default_storage
+from .models import Vehiculos, Soat, RevisionTecnomecanica, TarjetaOperacion, LicenciaTransito, PolizaContractual, PolizaExtracontractual
+from .serializers import SoatSlr, RevisionTecnomecanicaSlr, TarjetaOperacionSlr, LicenciaTransitoSlr, PolizaContractualSlr, PolizaExtracontractualSlr
+
+class BulkUploadDocsAPIView(APIView):
+    def post(self, request):
+        excel_file = request.FILES.get('excel')
+        if not excel_file:
+            return Response({'error': 'No se encontró el archivo excel.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            df = pd.read_excel(excel_file)
+            df = df.where(pd.notnull(df), None)
+        except Exception as e:
+            return Response({'error': f'Error al leer el archivo Excel: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        doc_models = {
+            'soat': Soat,
+            'revision-tecnomecanica': RevisionTecnomecanica,
+            'tarjeta-operacion': TarjetaOperacion,
+            'licencia-transito': LicenciaTransito,
+            'poliza-contractual': PolizaContractual,
+            'poliza-extracontractual': PolizaExtracontractual
+        }
+        doc_serializers = {
+            'soat': SoatSlr,
+            'revision-tecnomecanica': RevisionTecnomecanicaSlr,
+            'tarjeta-operacion': TarjetaOperacionSlr,
+            'licencia-transito': LicenciaTransitoSlr,
+            'poliza-contractual': PolizaContractualSlr,
+            'poliza-extracontractual': PolizaExtracontractualSlr
+        }
+        results = []
+        errors = []
+
+        for index, row in df.iterrows():
+            tipo = row.get('tipo_documento')
+            placa = row.get('placa')
+            file_name = row.get('file_name')
+
+            if not all([tipo, placa, file_name]):
+                errors.append(f"Fila {index+2}: Faltan datos esenciales (tipo_documento, placa, file_name).")
+                continue
+
+            file_obj = request.FILES.get(file_name)
+            if not file_obj:
+                errors.append(f"Fila {index+2}: El archivo '{file_name}' no fue encontrado en la carga.")
+                continue
+
+            if tipo not in doc_serializers:
+                errors.append(f"Fila {index+2}: Tipo de documento '{tipo}' no es válido.")
+                continue
+
+            try:
+                vehiculo = Vehiculos.objects.get(placa=placa)
+            except Vehiculos.DoesNotExist:
+                errors.append(f"Fila {index+2}: Vehículo con placa '{placa}' no encontrado.")
+                continue
+
+            try:
+                filename = f'docs_xlsx/{uuid.uuid4().hex}_{file_obj.name}'
+                path = default_storage.save(filename, file_obj)
+                data = row.to_dict()
+                data['soporte'] = path
+                
+                serializer_class = doc_serializers[tipo]
+                serializer = serializer_class(data=data)
+
+                if serializer.is_valid(raise_exception=False):
+                    serializer.save(vehiculo=vehiculo)
+                    results.append(serializer.data)
+                else:
+                    errors.append(f"Fila {index+2} (Placa: {placa}): {serializer.errors}")
+
+            except Exception as e:
+                errors.append(f"Fila {index+2} (Placa: {placa}): Error al procesar. {str(e)}")
+
+        if errors:
+            return Response({'success': results, 'error': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(results, status=status.HTTP_201_CREATED)

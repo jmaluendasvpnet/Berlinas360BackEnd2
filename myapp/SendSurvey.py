@@ -246,7 +246,7 @@ def docx_to_pdf_and_save_in_model(request):
                 print("ERROR:", str(e))
                 return HttpResponse("No se encontró el acta especificada", status=404)
 
-            pdf_url = f"https://c45a-186-96-97-246.ngrok-free.app/media/conciliaciones/{pdf_filename}"
+            pdf_url = f"{settings.FRONTEND_URL}/media/conciliaciones/{pdf_filename}"
             try:
                 client.messages.create(
                     body="Su documento de conciliación se ha registrado exitosamente. Adjunto encontrará el PDF.",
@@ -255,7 +255,8 @@ def docx_to_pdf_and_save_in_model(request):
                     media_url=[pdf_url]
                 )
             except Exception as twilio_e:
-                return HttpResponse(f"Error al enviar mensaje de WhatsApp: {str(twilio_e)}", status=500)
+                print(twilio_e)
+                # return HttpResponse(f"Error al enviar mensaje de WhatsApp: {str(twilio_e)}", status=500)
 
             email_destino = acta.email_conductor2
             if email_destino:
