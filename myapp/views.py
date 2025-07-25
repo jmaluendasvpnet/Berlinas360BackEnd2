@@ -259,8 +259,7 @@ import json
 from openai import OpenAI
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-settings.API_KEY
-cliente_openai = OpenAI(api_key=settings.API_KEY)
+cliente_openai = OpenAI(api_key=settings.OP_API_KEY)
 
 @csrf_exempt
 def analisis_recomendaciones_openai(request):
@@ -1799,7 +1798,7 @@ try:
         use_angle_cls=True,
         lang='es',
         det_db_box_thresh=0.5,
-        use_gpu=True,
+        use_gpu=False,
         det_model_dir='./paddleocr_models/det_lite',
         rec_model_dir='./paddleocr_models/rec_lite',
         show_log=False
@@ -2188,17 +2187,19 @@ class UploadView(APIView):
 
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 import pandas as pd
 import uuid
+from io import BytesIO
+from django.http import HttpResponse
 from django.core.files.storage import default_storage
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, serializers
 from .models import Vehiculos, Soat, RevisionTecnomecanica, TarjetaOperacion, LicenciaTransito, PolizaContractual, PolizaExtracontractual
 from .serializers import SoatSlr, RevisionTecnomecanicaSlr, TarjetaOperacionSlr, LicenciaTransitoSlr, PolizaContractualSlr, PolizaExtracontractualSlr
 
 class BulkUploadDocsAPIView(APIView):
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         excel_file = request.FILES.get('excel')
         if not excel_file:
             return Response({'error': 'No se encontró el archivo excel.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -2209,14 +2210,6 @@ class BulkUploadDocsAPIView(APIView):
         except Exception as e:
             return Response({'error': f'Error al leer el archivo Excel: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
-        doc_models = {
-            'soat': Soat,
-            'revision-tecnomecanica': RevisionTecnomecanica,
-            'tarjeta-operacion': TarjetaOperacion,
-            'licencia-transito': LicenciaTransito,
-            'poliza-contractual': PolizaContractual,
-            'poliza-extracontractual': PolizaExtracontractual
-        }
         doc_serializers = {
             'soat': SoatSlr,
             'revision-tecnomecanica': RevisionTecnomecanicaSlr,
@@ -2225,52 +2218,208 @@ class BulkUploadDocsAPIView(APIView):
             'poliza-contractual': PolizaContractualSlr,
             'poliza-extracontractual': PolizaExtracontractualSlr
         }
-        results = []
-        errors = []
+        
+        failed_rows_data = []
+        success_count = 0
 
         for index, row in df.iterrows():
-            tipo = row.get('tipo_documento')
-            placa = row.get('placa')
-            file_name = row.get('file_name')
-
-            if not all([tipo, placa, file_name]):
-                errors.append(f"Fila {index+2}: Faltan datos esenciales (tipo_documento, placa, file_name).")
-                continue
-
-            file_obj = request.FILES.get(file_name)
-            if not file_obj:
-                errors.append(f"Fila {index+2}: El archivo '{file_name}' no fue encontrado en la carga.")
-                continue
-
-            if tipo not in doc_serializers:
-                errors.append(f"Fila {index+2}: Tipo de documento '{tipo}' no es válido.")
-                continue
+            row_data_for_error = row.to_dict()
+            row_data_for_error = {k: v for k, v in row_data_for_error.items() if pd.notna(v)}
 
             try:
-                vehiculo = Vehiculos.objects.get(placa=placa)
-            except Vehiculos.DoesNotExist:
-                errors.append(f"Fila {index+2}: Vehículo con placa '{placa}' no encontrado.")
-                continue
+                tipo = row.get('tipo_documento')
+                placa = row.get('placa')
+                file_name = row.get('file_name')
 
-            try:
+                if not all([tipo, placa, file_name]):
+                    raise serializers.ValidationError("Faltan datos esenciales (tipo_documento, placa, file_name).")
+
+                file_obj = request.FILES.get(file_name)
+                if not file_obj:
+                    raise serializers.ValidationError(f"El archivo '{file_name}' no fue encontrado en la carga.")
+
+                if tipo not in doc_serializers:
+                    raise serializers.ValidationError(f"Tipo de documento '{tipo}' no es válido.")
+
+                try:
+                    vehiculo = Vehiculos.objects.get(placa=placa)
+                except Vehiculos.DoesNotExist:
+                    raise serializers.ValidationError(f"Vehículo con placa '{placa}' no encontrado.")
+                
                 filename = f'docs_xlsx/{uuid.uuid4().hex}_{file_obj.name}'
                 path = default_storage.save(filename, file_obj)
+                
                 data = row.to_dict()
                 data['soporte'] = path
                 
                 serializer_class = doc_serializers[tipo]
                 serializer = serializer_class(data=data)
 
-                if serializer.is_valid(raise_exception=False):
-                    serializer.save(vehiculo=vehiculo)
-                    results.append(serializer.data)
-                else:
-                    errors.append(f"Fila {index+2} (Placa: {placa}): {serializer.errors}")
+                serializer.is_valid(raise_exception=True)
+                serializer.save(vehiculo=vehiculo)
+                success_count += 1
 
             except Exception as e:
-                errors.append(f"Fila {index+2} (Placa: {placa}): Error al procesar. {str(e)}")
+                error_detail = str(e.detail) if hasattr(e, 'detail') else str(e)
+                row_data_for_error['motivo_error'] = error_detail
+                failed_rows_data.append(row_data_for_error)
+                continue
+        
+        if failed_rows_data:
+            failed_df = pd.DataFrame(failed_rows_data)
+            if 'motivo_error' in failed_df.columns:
+                cols = ['motivo_error'] + [col for col in failed_df.columns if col != 'motivo_error']
+                failed_df = failed_df[cols]
 
-        if errors:
-            return Response({'success': results, 'error': errors}, status=status.HTTP_400_BAD_REQUEST)
+            output_buffer = BytesIO()
+            with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+                failed_df.to_excel(writer, index=False, sheet_name='Errores')
+            output_buffer.seek(0)
 
-        return Response(results, status=status.HTTP_201_CREATED)
+            response = HttpResponse(
+                output_buffer.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = 'attachment; filename="reporte_errores_carga.xlsx"'
+            response['X-Upload-Status'] = f'{success_count} registros creados. {len(failed_rows_data)} con errores.'
+            response['Access-Control-Expose-Headers'] = 'X-Upload-Status, Content-Disposition'
+            response.status_code = status.HTTP_400_BAD_REQUEST
+            return response
+
+        return Response(
+            {'message': f'Carga masiva completada. Se crearon {success_count} registros exitosamente.'},
+            status=status.HTTP_201_CREATED
+        )
+    
+
+
+import pandas as pd
+import uuid
+from io import BytesIO
+from datetime import datetime
+from django.http import HttpResponse
+from django.core.files.storage import default_storage
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, serializers
+from .models import Vehiculos, Soat, RevisionTecnomecanica, TarjetaOperacion, PolizaContractual, PolizaExtracontractual
+from .serializers import SoatSlr, RevisionTecnomecanicaSlr, TarjetaOperacionSlr, PolizaContractualSlr, PolizaExtracontractualSlr
+
+def normalize_date(value):
+    if pd.isna(value) or value is None:
+        return None
+    try:
+        dt = pd.to_datetime(value, errors='coerce')
+        if pd.notna(dt):
+            return dt.strftime('%Y-%m-%d')
+    except Exception:
+        pass
+    return None
+
+class UploadCorrectedXlsxAPIView(APIView):
+    def post(self, request, *args, **kwargs):
+        excel_file = request.FILES.get('excel')
+        if not excel_file:
+            return Response({'error': 'No se encontró el archivo excel.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            df = pd.read_excel(excel_file, parse_dates=False)
+            df.replace("CAMPO REQUERIDO", None, inplace=True)
+            df = df.where(pd.notnull(df), None)
+        except Exception as e:
+            return Response({'error': f'Error al leer el archivo Excel: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        doc_serializers = {
+            'soat': SoatSlr,
+            'tecno': RevisionTecnomecanicaSlr,
+            'operacion': TarjetaOperacionSlr,
+            'contractual': PolizaContractualSlr,
+            'extracontractual': PolizaExtracontractualSlr,
+            'error': None
+        }
+
+        date_fields = [
+            'fecha_expedicion', 'vigencia_desde', 'vigencia_hasta', 'fecha_vencimiento',
+            'fechaExpedicion', 'fechaInicialVigencia', 'fechaFinVigencia'
+        ]
+
+        failed_rows_data = []
+        success_count = 0
+
+        for index, row in df.iterrows():
+            row_data_for_error = row.to_dict()
+            row_data_for_error = {k: v for k, v in row_data_for_error.items() if pd.notna(v)}
+
+            try:
+                tipo_str = str(row.get('tipo_documento', '')).lower()
+                if tipo_str == 'error':
+                    tipo_str = str(row.get('document_type', '')).lower()
+                
+                placa = row.get('placa')
+
+                if not all([tipo_str, placa]):
+                    raise serializers.ValidationError("Faltan datos esenciales (tipo_documento, placa).")
+
+                if tipo_str not in doc_serializers:
+                     raise serializers.ValidationError(f"Tipo de documento '{tipo_str}' no es válido.")
+
+                data = row.to_dict()
+                for field in date_fields:
+                    if field in data:
+                        data[field] = normalize_date(data[field])
+
+                if tipo_str == 'operacion':
+                    data['fechaExpedicion'] = data.get('fecha_expedicion')
+                    data['fechaInicialVigencia'] = data.get('vigencia_desde')
+                    data['fechaFinVigencia'] = data.get('fecha_vencimiento')
+                    data['numero'] = data.get('no_certificado')
+
+                if tipo_str in ['contractual', 'extracontractual']:
+                    data['fecha_inicio_vigencia'] = data.get('vigencia_desde')
+                    data['fecha_fin_vigencia'] = data.get('vigencia_hasta')
+
+                try:
+                    vehiculo = Vehiculos.objects.get(placa=placa)
+                except Vehiculos.DoesNotExist:
+                    raise serializers.ValidationError(f"Vehículo con placa '{placa}' no encontrado.")
+                
+                soporte_path = None
+                file_name = row.get('filename') 
+                if file_name and request.FILES.get(file_name):
+                    file_obj = request.FILES.get(file_name)
+                    filename = f'docs_xlsx/{uuid.uuid4().hex}_{file_obj.name}'
+                    soporte_path = default_storage.save(filename, file_obj)
+                    data['soporte'] = soporte_path
+                
+                serializer_class = doc_serializers[tipo_str]
+                serializer = serializer_class(data=data)
+
+                serializer.is_valid(raise_exception=True)
+                serializer.save(vehiculo=vehiculo)
+                success_count += 1
+
+            except Exception as e:
+                error_detail = str(e.detail) if hasattr(e, 'detail') else str(e)
+                row_data_for_error['motivo_error'] = error_detail
+                failed_rows_data.append(row_data_for_error)
+                continue
+        
+        if failed_rows_data:
+            failed_df = pd.DataFrame(failed_rows_data)
+            output_buffer = BytesIO()
+            with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+                failed_df.to_excel(writer, index=False, sheet_name='Errores')
+            output_buffer.seek(0)
+            
+            response = HttpResponse(
+                output_buffer.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = 'attachment; filename="reporte_errores_carga.xlsx"'
+            response.status_code = status.HTTP_400_BAD_REQUEST 
+            return response
+
+        return Response(
+            {'message': f'Carga masiva completada. Se crearon {success_count} registros exitosamente.'},
+            status=status.HTTP_201_CREATED
+        )

@@ -90,6 +90,7 @@ urlpatterns = [
 
     path('upload-license/', views.UploadLicenseView.as_view(), name='upload-license'),
     path('upload-licenses-xlsx/', views.BulkUploadDocsAPIView.as_view(), name='upload-licenses-xlsx'),
+    path('upload-corrected-xlsx/', views.UploadCorrectedXlsxAPIView.as_view(), name='upload-corrected-xlsx'),
     path('upload-license2/', view_rf_for.UploadLicenseView.as_view(), name='upload-license'),
 #     path('UploadColombianLicenseView/', views.UploadColombianLicenseView.as_view(), name='upload-license-col'),
 

@@ -544,6 +544,7 @@ class EventSerializer(serializers.ModelSerializer):
         evidences_data = validated_data.pop('evidences', [])
         event_required_roles_data = validated_data.pop('event_required_roles', [])
         event_required_colaboradores_data = validated_data.pop('event_required_colaboradores', [])
+        print(validated_data)
 
         event = Event.objects.create(**validated_data)
         event.event_required_roles.set(event_required_roles_data)
@@ -561,16 +562,27 @@ class EventSerializer(serializers.ModelSerializer):
         for evidence_data in evidences_data:
             EventEvidence.objects.create(event=event, **evidence_data)
 
-        if event.event_responsible:
-            Agenda.objects.create(
-                agenda_colaborador_id=event.event_responsible,
-                agenda_title=f"Evento: {event.event_aim}",
-                agenda_start_date=event.event_start_date.date(),
-                agenda_end_date=event.event_end_date.date(),
-                agenda_start_time=event.event_start_date.time(),
-                agenda_end_time=event.event_end_date.time(),
-                agenda_color="#00FF00"
-            )
+        # if event.event_responsible:
+        #     Agenda.objects.create(
+        #         agenda_colaborador=event.event_responsible,
+        #         agenda_title=f"Evento: {event.event_aim}",
+        #         agenda_start_date=event.event_start_date.date(),
+        #         agenda_end_date=event.event_end_date.date(),
+        #         agenda_start_time=event.event_start_date.time(),
+        #         agenda_end_time=event.event_end_date.time(),
+        #         agenda_color="#00FF00"
+        #     )
+
+        # if event.event_responsible:
+        #     Agenda.objects.create(
+        #         agenda_colaborador_id=event.event_responsible,
+        #         agenda_title=f"Evento: {event.event_aim}",
+        #         agenda_start_date=event.event_start_date.date(),
+        #         agenda_end_date=event.event_end_date.date(),
+        #         agenda_start_time=event.event_start_date.time(),
+        #         agenda_end_time=event.event_end_date.time(),
+        #         agenda_color="#00FF00"
+        #     )
 
         return event
 
