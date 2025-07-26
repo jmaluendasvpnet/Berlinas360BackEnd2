@@ -1,0 +1,44 @@
+/docs
+# /myapp/AdminDBUtilsConn.py
+# /mysite/settings.py
+/.idea
+/db.sqlite3
+/venv/
+/__pycache__/
+/*.pyc
+
+
+*.log
+*.pot
+*.pyc
+__pycache__/
+*.sqlite3
+*.swp
+*.swo
+*.DS_Store
+
+best_model_intenciones_bert.pth
+/media
+/trainings
+mysite/settings.py
+
+
+# Ignorar checkpoints, modelos, resultados y logs de entrenamiento
+trainings/**/checkpoint-*/
+trainings/**/best_model_*/
+trainings/**/results_*/
+trainings/**/logs_*/
+trainings/**/events.out.tfevents.*
+
+# Ignorar archivos .pt, .pth, .bin, .safetensors
+**/*.pt
+**/*.pth
+**/*.bin
+**/*.safetensors
+
+# Ignorar archivos de prueba y entrenamiento copiados
+**/train_bert_intent copy.py
+**/test_bert_intent copy.py
+
+# Ignorar archivo de configuración creado
+mysite/settings.py
