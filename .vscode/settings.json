@@ -1,7 +1,0 @@
-{
-    "terminal.integrated.env.windows": {
-        "PYTHONPATH": "${workspaceFolder}",
-        "VIRTUAL_ENV": "${workspaceFolder}\\venv",
-        "PATH": "${workspaceFolder}\\venv\\Scripts;${env:PATH}"
-    },
-}

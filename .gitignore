@@ -23,22 +23,19 @@ best_model_intenciones_bert.pth
 mysite/settings.py
 
 
-# Ignorar checkpoints, modelos, resultados y logs de entrenamiento
-trainings/**/checkpoint-*/
-trainings/**/best_model_*/
-trainings/**/results_*/
-trainings/**/logs_*/
-trainings/**/events.out.tfevents.*
-
-# Ignorar archivos .pt, .pth, .bin, .safetensors
-**/*.pt
-**/*.pth
-**/*.bin
-**/*.safetensors
-
-# Ignorar archivos de prueba y entrenamiento copiados
-**/train_bert_intent copy.py
-**/test_bert_intent copy.py
-
-# Ignorar archivo de configuración creado
+trainings/
+paddleocr_models/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.tfevents.*
+**/* copy.py
 mysite/settings.py
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv
+.DS_Store
+.vscode/
