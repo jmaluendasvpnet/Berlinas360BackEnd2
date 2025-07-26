@@ -24,8 +24,6 @@ mysite/settings.py
 
 
 trainings/
-paddleocr_models/
-/paddleocr_models/
 *.pt
 *.pth
 *.bin
