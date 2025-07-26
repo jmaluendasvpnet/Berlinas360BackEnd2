@@ -2551,8 +2551,18 @@ class VictimaProcesoVS(FilterableViewSet):
         if victima_proceso.estado_general == 'no_iniciado' or not victima_proceso.proceso_definicion_actual:
             return Response({"error": "El proceso debe ser iniciado antes de registrar actuaciones."}, status=status.HTTP_400_BAD_REQUEST)
 
-        request_data = request.data.copy()
+        # Create a mutable dictionary from request.data, excluding 'documento'
+        request_data = request.data.dict() if hasattr(request.data, 'dict') else dict(request.data)
         request_data['victima_proceso'] = victima_proceso.id
+
+        # Handle the file separately if it exists
+        document_file = request.FILES.get('documento')
+        if document_file:
+            request_data['documento'] = document_file
+        else:
+            # Ensure 'documento' is not present if no file is uploaded to avoid issues with None
+            if 'documento' in request_data:
+                del request_data['documento']
 
         serializer = HistorialActuacionSlr(data=request_data, context={'request': request, 'view': self})
         serializer.is_valid(raise_exception=True)
@@ -2565,7 +2575,6 @@ class VictimaProcesoVS(FilterableViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        document_file = serializer.validated_data.get('documento')
         original_doc_name = document_file.name if document_file else None
 
         login_user_instance = None

@@ -165,6 +165,8 @@ def upload_media_to_last_siniestro(session):
 @require_http_methods(["POST"])
 def whatsapp_webhook(request):
     data, source = get_request_data_and_source(request)
+    print(data)
+    print(source)
     if not source:
         return HttpResponse(status=400)
     if source == "manychat_whatsapp":
